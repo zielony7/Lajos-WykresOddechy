@@ -227,7 +227,9 @@ select.dinput{cursor:pointer}
   <div class="li"><div class="ld" style="background:#1D9E75"></div><span>&lt;40</span></div>
   <div class="li"><div class="ld" style="background:#EF9F27"></div><span>40–59</span></div>
   <div class="li"><div class="ld" style="background:#E24B4A"></div><span>≥60</span></div>
-  <div class="li"><div class="ldash" style="border-color:#E24B4A;opacity:.8"></div><span>Próg 40</span></div>
+  <div class="li"><div class="ldash" style="border-color:#1D9E75;opacity:.8"></div><span>Próg 30</span></div>
+  <div class="li"><div class="ldash" style="border-color:#EF9F27;opacity:.8"></div><span>Próg 40</span></div>
+  <div class="li"><div class="ldash" style="border-color:#E24B4A;opacity:.8"></div><span>Próg 50</span></div>
   <div class="li"><div class="ldash" style="border-color:#1D9E75"></div><span>💊 Furo 10mg tabl.</span></div>
   <div class="li"><div class="ldash" style="border-color:#1D9E75"></div><span>💉 Furo 10mg inj.</span></div>
   <div class="li"><div class="ldash" style="border-color:#EF9F27"></div><span>💊 Furo 20mg tabl.</span></div>
@@ -268,12 +270,14 @@ const fmtYMD=s=>{ const d=new Date(s); return `${p2(d.getDate())}.${p2(d.getMont
 const fmtHM=d=>`${p2(d.getHours())}:${p2(d.getMinutes())}`;
 const fmtFull=d=>`${fmtDM(d)} ${fmtHM(d)}`;
 const dayStart=d=>{const c=new Date(d);c.setHours(0,0,0,0);return c;};
-const ptColor=v=>v>=60?'#E24B4A':v>=40?'#EF9F27':'#1D9E75';
+const ptColor=v=>v>=50?'#E24B4A':v>=40?'#EF9F27':'#1D9E75';
 function mergeDedup(...arrs){
   const all=[].concat(...arrs);
   all.sort((a,b)=>msOf(a.t)-msOf(b.t));
   const seen=new Set();
-  return all.filter(r=>{const k=r.t+'|'+r.v;if(seen.has(k))return false;seen.add(k);return true;});
+  return all
+    .map(r=>({...r, v: r.v < 15 ? 15 : r.v}))  // min 15 oddechów
+    .filter(r=>{const k=r.t+'|'+r.v;if(seen.has(k))return false;seen.add(k);return true;});
 }
 
 // ── DOSES UI ─────────────────────────────────────────────────────────────────
@@ -554,7 +558,14 @@ function buildChart(){
   const stepMin=maxX<=1440?60:maxX<=3*1440?240:maxX<=7*1440?360:maxX<=14*1440?720:1440;
   const refStr=fmtDM(new Date(rsMs));
 
-  const annotations={threshold:{type:'line',yMin:40,yMax:40,borderColor:'rgba(226,75,74,0.65)',borderWidth:1.5,borderDash:[6,3]}};
+  const annotations={
+    thresh30:{type:'line',yMin:30,yMax:30,borderColor:'rgba(29,158,117,0.7)',borderWidth:1.5,borderDash:[6,3],
+      label:{display:true,content:'30',position:'start',backgroundColor:'transparent',color:'rgba(29,158,117,0.8)',font:{size:9,family:mono},padding:{x:3,y:1}}},
+    thresh40:{type:'line',yMin:40,yMax:40,borderColor:'rgba(239,159,39,0.7)',borderWidth:1.5,borderDash:[6,3],
+      label:{display:true,content:'40',position:'start',backgroundColor:'transparent',color:'rgba(239,159,39,0.8)',font:{size:9,family:mono},padding:{x:3,y:1}}},
+    thresh50:{type:'line',yMin:50,yMax:50,borderColor:'rgba(226,75,74,0.7)',borderWidth:1.5,borderDash:[6,3],
+      label:{display:true,content:'50',position:'start',backgroundColor:'transparent',color:'rgba(226,75,74,0.8)',font:{size:9,family:mono},padding:{x:3,y:1}}},
+  };
   const cur=new Date(rsMs); cur.setDate(cur.getDate()+1);
   while(cur.getTime()<=toMs){
     const xv=(cur.getTime()-rsMs)/60000;
