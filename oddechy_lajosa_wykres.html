@@ -6,8 +6,8 @@
 <title>Lajos — Monitor Oddechów</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/2.2.1/chartjs-plugin-annotation.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
 :root{--bg:#f7f8fa;--surface:#fff;--surface2:#f0f2f5;--text:#1c2128;--text-muted:#6e7681;--border:#d8dde4;--accent:#378ADD;--red:#E24B4A;--orange:#EF9F27;--green:#1D9E75;--shadow:0 1px 4px rgba(0,0,0,.09),0 0 0 1px rgba(0,0,0,.04);}
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--surface:#161b22;--surface2:#21262d;--text:#e6edf3;--text-muted:#8b949e;--border:#30363d;--shadow:0 1px 6px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.04);}}
@@ -462,6 +462,7 @@ function buildChart(){
   document.getElementById('rlabel').textContent=pts.length+' pomiarów · '+fmtFull(new Date(fromMs))+' → '+fmtFull(new Date(toMs));
 
   if(chart)chart.destroy();
+  if(typeof Chart==='undefined'){setTimeout(buildChart,500);return;}
   chart=new Chart(document.getElementById('chart').getContext('2d'),{
     type:'scatter',
     data:{datasets:[
