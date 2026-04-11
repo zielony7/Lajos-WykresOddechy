@@ -269,6 +269,27 @@ function showImportBanner(imp){
 let RAW_DATA=[];
 let chart=null;
 
+// JSONP helper — omija blokadę CORS Apps Script
+function jsonp(url){
+  return new Promise((resolve, reject)=>{
+    const cbName='_lajos_cb_'+Date.now();
+    const script=document.createElement('script');
+    const timeout=setTimeout(()=>{
+      cleanup();
+      reject(new Error('Timeout — sprawdź URL i uprawnienia wdrożenia'));
+    }, 15000);
+    function cleanup(){
+      delete window[cbName];
+      if(script.parentNode) script.parentNode.removeChild(script);
+      clearTimeout(timeout);
+    }
+    window[cbName]=function(data){cleanup(); resolve(data);};
+    script.onerror=()=>{cleanup(); reject(new Error('Nie można załadować skryptu — sprawdź URL'));};
+    script.src=url+(url.includes('?')?'&':'?')+'callback='+cbName;
+    document.head.appendChild(script);
+  });
+}
+
 async function fetchAll(verbose=false){
   const url=getUrl();
   const btn=document.getElementById('refresh-btn');
@@ -276,11 +297,9 @@ async function fetchAll(verbose=false){
 
   if(!url){
     setConn('off');
-    // Pokaż panel ustawień
     document.getElementById('setup-body').classList.add('open');
     document.getElementById('chevron').textContent='▲';
     setSetupStatus('Ustaw URL Apps Script żeby połączyć się z Google Sheets','red');
-    // Fallback: użyj samych danych bazowych
     RAW_DATA=mergeDedup(BASE_DATA);
     initDatesAndBuild();
     return;
@@ -290,9 +309,7 @@ async function fetchAll(verbose=false){
   icon.innerHTML='<span class="spin">⟳</span>';
 
   try{
-    const res=await fetch(url);
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const json=await res.json();
+    const json=await jsonp(url);
     if(!json.ok) throw new Error(json.error||'Błąd skryptu');
 
     const sheetsData=json.data||[];
@@ -301,26 +318,18 @@ async function fetchAll(verbose=false){
 
     RAW_DATA=mergeDedup(BASE_DATA,sheetsData);
     setConn('ok');
-
-    // Pokaż informację o imporcie jeśli coś doszło
     if(json.imported) showImportBanner(json.imported);
-
     const ct=new Date();
-    setSetupStatus(`✓ Zsynchronizowano ${fmtFull(ct)} · ${sheetsData.length} pom. w Sheets`,'green');
+    setSetupStatus('✓ Zsynchronizowano '+fmtFull(ct)+' · '+sheetsData.length+' pom. w Sheets','green');
     updateTopBar();
     initDatesAndBuild();
 
   }catch(e){
     setConn('err');
     setSetupStatus('Błąd: '+e.message,'red');
-    // Fallback cache
     const cached=localStorage.getItem('lajos_sheets_cache');
-    if(cached){
-      const sd=JSON.parse(cached);
-      RAW_DATA=mergeDedup(BASE_DATA,sd);
-    }else{
-      RAW_DATA=mergeDedup(BASE_DATA);
-    }
+    if(cached){RAW_DATA=mergeDedup(BASE_DATA,JSON.parse(cached));}
+    else{RAW_DATA=mergeDedup(BASE_DATA);}
     updateTopBar();
     initDatesAndBuild();
   }
@@ -333,8 +342,9 @@ async function sendToSheets(rows){
   const CHUNK=40;
   for(let i=0;i<rows.length;i+=CHUNK){
     const chunk=rows.slice(i,i+CHUNK);
-    const r=await fetch(url+'?add='+encodeURIComponent(JSON.stringify(chunk)));
-    if(!r.ok)return false;
+    try{
+      await jsonp(url+'?add='+encodeURIComponent(JSON.stringify(chunk)));
+    }catch(e){return false;}
   }
   return true;
 }
