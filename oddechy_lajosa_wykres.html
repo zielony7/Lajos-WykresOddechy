@@ -87,6 +87,12 @@ h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
 /* yellow refresh btn */
 .btn.yellow{background:#EF9F27;color:#fff}
 .btn.yellow:hover:not(:disabled){opacity:.85}
+/* panel toggle buttons */
+.toggle-btn{border-radius:6px;font-size:11px;font-weight:600;padding:5px 12px;cursor:pointer;border:none;pointer-events:none;white-space:nowrap;font-family:'IBM Plex Sans',sans-serif;transition:opacity .15s}
+.toggle-db{background:#378ADD22;color:#378ADD;border:1px solid #378ADD44}
+.toggle-doses{background:#1D9E7522;color:#1D9E75;border:1px solid #1D9E7544}
+.setup-head:hover .toggle-db,.doses-head:hover .toggle-db{background:#378ADD;color:#fff}
+.setup-head:hover .toggle-doses,.doses-head:hover .toggle-doses{background:#1D9E75;color:#fff}
 /* doses panel */
 .doses-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden}
 .doses-head{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;cursor:pointer;user-select:none}
@@ -122,6 +128,9 @@ select.dinput{cursor:pointer}
 <!-- HEADER -->
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
   <div><h1>🐾 Lajos — Monitor Oddechów</h1><div class="sub" id="rlabel">Ładowanie...</div></div>
+  <div style="font-size:10px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;text-align:right;line-height:1.5">
+    <div style="opacity:.5">v 11.04.2026 17:37</div>
+  </div>
 </div>
 
 <!-- SETUP -->
@@ -129,9 +138,9 @@ select.dinput{cursor:pointer}
   <div class="setup-head" onclick="toggleSetup()">
     <div class="setup-head-left">
       <span class="conn" id="conn-dot">⚪</span>
-      ⚙ Połączenie z Google Sheets
+      Ustawienia Bazy Danych
     </div>
-    <span id="chevron" style="font-size:10px;color:var(--text-muted)">▼</span>
+    <button class="toggle-btn toggle-db" id="chevron" tabindex="-1">▼ rozwiń</button>
   </div>
   <div class="setup-body" id="setup-body">
     <div class="howto">
@@ -163,7 +172,7 @@ select.dinput{cursor:pointer}
     <div class="actbar-title">Dane oddechów Lajosa</div>
     <div class="actbar-sub">Łącznie: <b id="total-cnt">—</b> pom. · ostatni: <span id="last-dt">—</span></div>
   </div>
-  <button class="btn yellow" id="refresh-btn" onclick="fetchAll(true)">
+  <button class="btn sec" id="refresh-btn" onclick="fetchAll(true)">
     <span id="refresh-icon">⟳</span> Odśwież i sprawdź Docs
   </button>
 </div>
@@ -171,8 +180,8 @@ select.dinput{cursor:pointer}
 <!-- DOSES PANEL -->
 <div class="doses-panel">
   <div class="doses-head" onclick="toggleDoses()">
-    <div class="doses-head-left">💊 Dawki Furosemidu</div>
-    <span id="doses-chevron" style="font-size:10px;color:var(--text-muted)">▼</span>
+    <div class="doses-head-left">💊 Rejestr Dawek Furosemidu</div>
+    <button class="toggle-btn toggle-doses" id="doses-chevron" tabindex="-1">▼ rozwiń</button>
   </div>
   <div class="doses-body" id="doses-body">
     <div class="doses-form">
@@ -280,12 +289,26 @@ function mergeDedup(...arrs){
     .filter(r=>{const k=r.t+'|'+r.v;if(seen.has(k))return false;seen.add(k);return true;});
 }
 
+// ── REFRESH BUTTON COLOR ─────────────────────────────────────────────────────
+function updateRefreshBtnColor(){
+  const btn=document.getElementById('refresh-btn');
+  const lastCheck=localStorage.getItem('lajos_last_check');
+  const today=new Date().toISOString().slice(0,10);
+  if(!lastCheck || lastCheck!==today){
+    btn.className='btn yellow';
+    btn.title='Nie sprawdzano jeszcze dzisiaj!';
+  }else{
+    btn.className='btn sec';
+    btn.title='Ostatnio sprawdzono dzisiaj';
+  }
+}
+
 // ── DOSES UI ─────────────────────────────────────────────────────────────────
 function toggleDoses(){
   const b=document.getElementById('doses-body');
   const ch=document.getElementById('doses-chevron');
   const open=b.classList.toggle('open');
-  ch.textContent=open?'▲':'▼';
+  ch.textContent=open?'▲ zwiń':'▼ rozwiń';
 }
 
 function addDose(){
@@ -337,7 +360,7 @@ function toggleSetup(){
   const b=document.getElementById('setup-body');
   const ch=document.getElementById('chevron');
   const open=b.classList.toggle('open');
-  ch.textContent=open?'▲':'▼';
+  ch.textContent=open?'▲ zwiń':'▼ rozwiń';
 }
 function setConn(s){document.getElementById('conn-dot').textContent=s==='ok'?'🟢':s==='err'?'🔴':'⚪';}
 function setSetupStatus(msg,clr){const el=document.getElementById('setup-status');el.textContent=msg;el.style.color=`var(--${clr||'text-muted'})`;}
@@ -416,7 +439,7 @@ async function fetchAll(verbose=false){
   if(!url){
     setConn('off');
     document.getElementById('setup-body').classList.add('open');
-    document.getElementById('chevron').textContent='▲';
+    document.getElementById('chevron').textContent='▲ zwiń';
     setSetupStatus('Ustaw URL Apps Script żeby połączyć się z Google Sheets','red');
     RAW_DATA=mergeDedup(BASE_DATA);
     initDatesAndBuild();
@@ -438,6 +461,8 @@ async function fetchAll(verbose=false){
     setConn('ok');
     if(json.imported) showImportBanner(json.imported);
     const ct=new Date();
+    localStorage.setItem('lajos_last_check', ct.toISOString().slice(0,10));
+    updateRefreshBtnColor();
     setSetupStatus('✓ Zsynchronizowano '+fmtFull(ct)+' · '+sheetsData.length+' pom. w Sheets','green');
     updateTopBar();
     initDatesAndBuild();
@@ -661,6 +686,9 @@ document.querySelectorAll('.pbtn').forEach(btn=>btn.addEventListener('click',fun
   }
   updateTopBar();
   initDatesAndBuild();
+
+  // Kolor przycisku Odśwież — żółty tylko jeśli nie sprawdzano dzisiaj
+  updateRefreshBtnColor();
 
   // Załaduj dawki
   loadDoses();
