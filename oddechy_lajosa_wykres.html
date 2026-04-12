@@ -100,6 +100,16 @@ h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
 .ll{width:18px;height:2px;flex-shrink:0}
 .ldash{width:18px;flex-shrink:0;border-top:2px dashed}
 .chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 14px 10px;box-shadow:var(--shadow)}
+#chart{cursor:grab}
+#chart.dragging{cursor:grabbing}
+.pt-menu{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);z-index:9999;min-width:160px;overflow:hidden;display:none}
+.pt-menu.show{display:block}
+.pt-menu-header{padding:8px 12px 6px;border-bottom:1px solid var(--border);font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--text-muted)}
+.pt-menu-header b{color:var(--text);font-size:12px}
+.pt-menu-item{display:flex;align-items:center;gap:8px;padding:9px 14px;font-size:12px;cursor:pointer;transition:background .12s;color:var(--text)}
+.pt-menu-item:hover{background:var(--surface2)}
+.pt-menu-item.danger{color:var(--red)}
+.pt-menu-item.danger:hover{background:#E24B4A18}
 /* yellow refresh btn */
 .btn.yellow{background:#EF9F27;color:#fff}
 .btn.yellow:hover:not(:disabled){opacity:.85}
@@ -296,13 +306,25 @@ const fmtHM=d=>`${p2(d.getHours())}:${p2(d.getMinutes())}`;
 const fmtFull=d=>`${fmtDM(d)} ${fmtHM(d)}`;
 const dayStart=d=>{const c=new Date(d);c.setHours(0,0,0,0);return c;};
 const ptColor=v=>v>=50?'#E24B4A':v>=40?'#EF9F27':'#1D9E75';
+function fix24(t){
+  // 24:xx:xx → 00:xx:xx tego samego dnia (NIE następnego)
+  return typeof t==='string' ? t.replace(/( )24:/,' 00:') : t;
+}
 function mergeDedup(...arrs){
   const all=[].concat(...arrs);
   all.sort((a,b)=>msOf(a.t)-msOf(b.t));
+  // deleted points filter
+  let deleted=new Set();
+  try{deleted=new Set(JSON.parse(localStorage.getItem('lajos_deleted')||'[]'));}catch(e){}
   const seen=new Set();
   return all
-    .map(r=>({...r, v: r.v < 15 ? 15 : r.v}))  // min 15 oddechów
-    .filter(r=>{const k=r.t+'|'+r.v;if(seen.has(k))return false;seen.add(k);return true;});
+    .map(r=>({...r, t:fix24(r.t), v: r.v < 15 ? 15 : r.v}))
+    .filter(r=>{
+      const k=r.t+'|'+r.v;
+      if(deleted.has(k))return false;
+      if(seen.has(k))return false;
+      seen.add(k); return true;
+    });
 }
 
 // ── REFRESH BUTTON COLOR ─────────────────────────────────────────────────────
@@ -560,10 +582,11 @@ function initDatesAndBuild(){
   const MIN=new Date(Math.min(...RAW_DATA.map(r=>msOf(r.t))));
   window._MAX=MAX; window._MIN=MIN;
   if(!document.getElementById('dfrom').value){
-    const to=new Date(MAX); to.setHours(23,59,59,999);
-    const fr=new Date(to); fr.setDate(fr.getDate()-0); fr.setHours(0,0,0,0);
-    document.getElementById('dfrom').value=fr.toISOString().slice(0,10);
-    document.getElementById('dto').value=to.toISOString().slice(0,10);
+    // Default: ostatnie 24h od teraz
+    const now=new Date();
+    const past24=new Date(now.getTime()-24*60*60000);
+    document.getElementById('dfrom').value=past24.toISOString().slice(0,10);
+    document.getElementById('dto').value=now.toISOString().slice(0,10);
   }else{
     const curTo=new Date(document.getElementById('dto').value+'T23:59:59');
     if(MAX>curTo){
@@ -672,6 +695,141 @@ function updateMetrics(pts){
 // ── EVENTS ────────────────────────────────────────────────────────────────────
 document.getElementById('dfrom').addEventListener('change',buildChart);
 document.getElementById('dto').addEventListener('change',buildChart);
+
+// ── DRAG PAN ────────────────────────────────────────────────────────────────
+(function(){
+  const canvas=document.getElementById('chart');
+  let dragStart=null, dragFromMs=null, dragToMs=null, holdTimer=null, isDragging=false;
+
+  canvas.addEventListener('mousedown',e=>{
+    // Start hold timer for context menu (500ms)
+    holdTimer=setTimeout(()=>{
+      tryShowMenu(e);
+      holdTimer=null;
+    },500);
+    dragStart=e.clientX;
+    const fromVal=document.getElementById('dfrom').value;
+    const toVal=document.getElementById('dto').value;
+    if(!fromVal||!toVal)return;
+    dragFromMs=new Date(fromVal+'T00:00:00').getTime();
+    dragToMs=new Date(toVal+'T23:59:59').getTime();
+    isDragging=false;
+  });
+
+  canvas.addEventListener('mousemove',e=>{
+    if(dragStart===null)return;
+    const dx=e.clientX-dragStart;
+    if(Math.abs(dx)<5)return;
+    // Cancel hold timer if dragging
+    if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}
+    isDragging=true;
+    canvas.classList.add('dragging');
+    const rangeMs=dragToMs-dragFromMs;
+    const canvasW=canvas.offsetWidth||canvas.width||800;
+    const msPerPx=rangeMs/canvasW;
+    const shiftMs=-dx*msPerPx;
+    const newFrom=new Date(dragFromMs+shiftMs);
+    const newTo=new Date(dragToMs+shiftMs);
+    // Clamp to data range
+    if(!window._MIN||!window._MAX)return;
+    if(newFrom<window._MIN||newTo>new Date(window._MAX.getTime()+24*3600000))return;
+    document.getElementById('dfrom').value=newFrom.toISOString().slice(0,10);
+    document.getElementById('dto').value=newTo.toISOString().slice(0,10);
+    buildChart();
+  });
+
+  canvas.addEventListener('mouseup',e=>{
+    if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}
+    dragStart=null; isDragging=false;
+    canvas.classList.remove('dragging');
+  });
+
+  canvas.addEventListener('mouseleave',()=>{
+    if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}
+    dragStart=null; isDragging=false;
+    canvas.classList.remove('dragging');
+  });
+
+  // Touch support
+  let touchStartX=null;
+  canvas.addEventListener('touchstart',e=>{
+    touchStartX=e.touches[0].clientX;
+    const fromVal=document.getElementById('dfrom').value;
+    const toVal=document.getElementById('dto').value;
+    if(!fromVal||!toVal)return;
+    dragFromMs=new Date(fromVal+'T00:00:00').getTime();
+    dragToMs=new Date(toVal+'T23:59:59').getTime();
+  },{passive:true});
+
+  canvas.addEventListener('touchmove',e=>{
+    if(touchStartX===null)return;
+    const dx=e.touches[0].clientX-touchStartX;
+    const rangeMs=dragToMs-dragFromMs;
+    const canvasW=canvas.offsetWidth||800;
+    const msPerPx=rangeMs/canvasW;
+    const shiftMs=-dx*msPerPx;
+    const newFrom=new Date(dragFromMs+shiftMs);
+    const newTo=new Date(dragToMs+shiftMs);
+    document.getElementById('dfrom').value=newFrom.toISOString().slice(0,10);
+    document.getElementById('dto').value=newTo.toISOString().slice(0,10);
+    buildChart();
+  },{passive:true});
+
+  canvas.addEventListener('touchend',()=>{touchStartX=null;});
+})();
+
+// ── POINT CONTEXT MENU ───────────────────────────────────────────────────────
+let _menuPoint=null;
+function tryShowMenu(e){
+  if(!chart||!RAW_DATA.length)return;
+  const canvas=document.getElementById('chart');
+  const rect=canvas.getBoundingClientRect();
+  const x=e.clientX-rect.left, y=e.clientY-rect.top;
+  // Find nearest point
+  const fromVal=document.getElementById('dfrom').value;
+  const toVal=document.getElementById('dto').value;
+  const fromMs=new Date(fromVal+'T00:00:00').getTime();
+  const toMs=new Date(toVal+'T23:59:59').getTime();
+  const rsMs=new Date(fromVal+'T00:00:00').setHours(0,0,0,0);
+  const pts=RAW_DATA.filter(r=>{const m=msOf(r.t);return m>=fromMs&&m<=toMs;});
+  if(!pts.length)return;
+  // Find closest point by canvas position
+  let best=null, bestDist=30; // max 30px
+  const xScale=chart.scales.x, yScale=chart.scales.y;
+  pts.forEach(r=>{
+    const px=xScale.getPixelForValue((msOf(r.t)-rsMs)/60000);
+    const py=yScale.getPixelForValue(r.v);
+    const dist=Math.sqrt((px-x)**2+(py-y)**2);
+    if(dist<bestDist){bestDist=dist;best=r;}
+  });
+  if(!best)return;
+  _menuPoint=best;
+  const menu=document.getElementById('pt-menu');
+  const header=document.getElementById('pt-menu-header');
+  header.innerHTML=`<b>${best.v} odd/min</b><br>${best.t.replace('T',' ').slice(0,16)}`;
+  menu.style.left=(e.clientX+8)+'px';
+  menu.style.top=(e.clientY-10)+'px';
+  menu.classList.add('show');
+}
+
+function deletePoint(){
+  if(!_menuPoint)return;
+  const key=_menuPoint.t+'|'+_menuPoint.v;
+  let deleted=[];
+  try{deleted=JSON.parse(localStorage.getItem('lajos_deleted')||'[]');}catch(e){}
+  if(!deleted.includes(key))deleted.push(key);
+  localStorage.setItem('lajos_deleted',JSON.stringify(deleted));
+  document.getElementById('pt-menu').classList.remove('show');
+  _menuPoint=null;
+  RAW_DATA=mergeDedup(BASE_DATA, JSON.parse(localStorage.getItem('lajos_sheets_cache')||'[]'));
+  buildChart();
+}
+
+// Close menu on outside click
+document.addEventListener('click',e=>{
+  const menu=document.getElementById('pt-menu');
+  if(!menu.contains(e.target))menu.classList.remove('show');
+});
 document.querySelectorAll('.pbtn').forEach(btn=>btn.addEventListener('click',function(){
   document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('active'));
   this.classList.add('active');
@@ -679,10 +837,18 @@ document.querySelectorAll('.pbtn').forEach(btn=>btn.addEventListener('click',fun
   const days=+this.dataset.d;
   const to=new Date(MAX); to.setHours(23,59,59,999);
   const fr=new Date(to);
-  if(days>0)fr.setDate(fr.getDate()-(days-1)); else fr.setTime(MIN.getTime());
-  fr.setHours(0,0,0,0);
-  document.getElementById('dfrom').value=fr.toISOString().slice(0,10);
-  document.getElementById('dto').value=to.toISOString().slice(0,10);
+  if(days===1){
+    // 24h: dokładnie 24h wstecz od teraz
+    const now=new Date();
+    const past24=new Date(now.getTime()-24*60*60000);
+    document.getElementById('dfrom').value=past24.toISOString().slice(0,10);
+    document.getElementById('dto').value=now.toISOString().slice(0,10);
+  } else {
+    if(days>0)fr.setDate(fr.getDate()-(days-1)); else fr.setTime(MIN.getTime());
+    fr.setHours(0,0,0,0);
+    document.getElementById('dfrom').value=fr.toISOString().slice(0,10);
+    document.getElementById('dto').value=to.toISOString().slice(0,10);
+  }
   buildChart();
 }));
 
@@ -717,5 +883,9 @@ document.querySelectorAll('.pbtn').forEach(btn=>btn.addEventListener('click',fun
   fetchAll(false);
 })();
 </script>
+<div class="pt-menu" id="pt-menu">
+  <div class="pt-menu-header" id="pt-menu-header"><b>—</b></div>
+  <div class="pt-menu-item danger" onclick="deletePoint()">🗑 Usuń ten pomiar</div>
+</div>
 </body>
 </html>
