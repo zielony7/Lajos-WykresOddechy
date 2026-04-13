@@ -681,7 +681,7 @@ function buildChart(){
         x:{type:'linear',min:xMin,max:xMax,grid:{color:gc},border:{color:gc},
            ticks:{color:tc,font:{size:10,family:mono},stepSize:stepMin,maxRotation:0,
              callback:val=>{const dt2=new Date(rsMs+val*60000);const dm=fmtDM(dt2),hm=fmtHM(dt2);return dm===refStr?hm:dm+'\n'+hm;}}},
-        y:{min:10,max:95,grid:{color:gc},border:{color:gc},ticks:{color:tc,font:{size:10,family:mono},stepSize:10},
+        y:{min:10,max:150,grid:{color:gc},border:{color:gc},ticks:{color:tc,font:{size:10,family:mono},stepSize:10},
            title:{display:true,text:'oddechów/min',color:tc,font:{size:10,family:mono}}}
       },
       plugins:{
